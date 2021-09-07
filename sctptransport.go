@@ -242,8 +242,30 @@ func (r *SCTPTransport) OnDataChannelOpened(f func(*DataChannel)) {
 	r.onDataChannelOpenedHandler = f
 }
 
+func (r *SCTPTransport) onDataChannelClosed(dc *DataChannel) func() {
+	old := func() {}
+	if dc.onCloseHandler != nil {
+		old = dc.onCloseHandler
+	}
+
+	return func() {
+		old()
+
+		r.lock.Lock()
+		defer r.lock.Unlock()
+
+		for i, d := range r.dataChannels {
+			if dc == d {
+				r.dataChannels = append(r.dataChannels[:i], r.dataChannels[i+1:]...)
+				break
+			}
+		}
+	}
+}
+
 func (r *SCTPTransport) onDataChannel(dc *DataChannel) (done chan struct{}) {
 	r.lock.Lock()
+	dc.onCloseHandler = r.onDataChannelClosed(dc)
 	r.dataChannels = append(r.dataChannels, dc)
 	r.dataChannelsAccepted++
 	handler := r.onDataChannelHandler
@@ -338,15 +360,6 @@ func (r *SCTPTransport) collectStats(collector *statsReportCollector) {
 }
 
 func (r *SCTPTransport) generateAndSetDataChannelID(dtlsRole DTLSRole, idOut **uint16) error {
-	isChannelWithID := func(id uint16) bool {
-		for _, d := range r.dataChannels {
-			if d.id != nil && *d.id == id {
-				return true
-			}
-		}
-		return false
-	}
-
 	var id uint16
 	if dtlsRole != DTLSRoleClient {
 		id++
@@ -356,8 +369,23 @@ func (r *SCTPTransport) generateAndSetDataChannelID(dtlsRole DTLSRole, idOut **u
 
 	r.lock.Lock()
 	defer r.lock.Unlock()
+
+	// Create map of ids so we can compare without double-looping each time.
+	idsMap := make(map[uint16]struct{}, len(r.dataChannels))
+	for _, dc := range r.dataChannels {
+		if dc.id == nil {
+			continue
+		}
+		state := dc.ReadyState()
+		if state != DataChannelStateConnecting && state != DataChannelStateOpen {
+			continue
+		}
+
+		idsMap[*dc.id] = struct{}{}
+	}
+
 	for ; id < max-1; id += 2 {
-		if isChannelWithID(id) {
+		if _, ok := idsMap[id]; ok {
 			continue
 		}
 		*idOut = &id

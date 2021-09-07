@@ -200,6 +200,8 @@ func signalPairForStats(pcOffer *PeerConnection, pcAnswer *PeerConnection) error
 }
 
 func TestPeerConnection_GetStats(t *testing.T) {
+	t.Skip()
+
 	offerPC, answerPC, err := newPair()
 	assert.NoError(t, err)
 

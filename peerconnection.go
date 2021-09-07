@@ -1793,6 +1793,7 @@ func (pc *PeerConnection) CreateDataChannel(label string, options *DataChannelIn
 	}
 
 	pc.sctpTransport.lock.Lock()
+	d.onCloseHandler = pc.sctpTransport.onDataChannelClosed(d)
 	pc.sctpTransport.dataChannels = append(pc.sctpTransport.dataChannels, d)
 	pc.sctpTransport.dataChannelsRequested++
 	pc.sctpTransport.lock.Unlock()
